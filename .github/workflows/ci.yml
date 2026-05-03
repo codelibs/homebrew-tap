@@ -15,8 +15,8 @@ jobs:
       fail-fast: false
       matrix:
         os:
+          - macos-15   # arm64 (latest)
           - macos-14   # arm64
-          - macos-13   # x86_64
           - ubuntu-latest
     runs-on: ${{ matrix.os }}
     steps:
