@@ -1,0 +1,71 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  test-formulae:
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - macos-14   # arm64
+          - macos-13   # x86_64
+          - ubuntu-latest
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Homebrew
+        id: setup-homebrew
+        uses: Homebrew/actions/setup-homebrew@master
+
+      - name: Find changed formulae
+        id: changed
+        run: |
+          set -euo pipefail
+          FORMULAE=()
+          for f in Formula/*.rb; do
+            [ -f "$f" ] || continue
+            FORMULAE+=("$f")
+          done
+          if [ ${#FORMULAE[@]} -eq 0 ]; then
+            echo "No formulae found; skipping."
+            echo "list=" >> "$GITHUB_OUTPUT"
+          else
+            echo "list=${FORMULAE[*]}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Audit each formula
+        if: steps.changed.outputs.list != ''
+        run: |
+          set -euo pipefail
+          for f in ${{ steps.changed.outputs.list }}; do
+            echo "::group::brew audit $f"
+            brew audit --strict --new "$f"
+            echo "::endgroup::"
+          done
+
+      - name: Install and test each formula
+        if: steps.changed.outputs.list != ''
+        run: |
+          set -euo pipefail
+          for f in ${{ steps.changed.outputs.list }}; do
+            name=$(basename "$f" .rb)
+            echo "::group::brew install $name"
+            brew install --build-from-source "$f"
+            echo "::endgroup::"
+            echo "::group::brew test $name"
+            brew test "$name"
+            echo "::endgroup::"
+          done
+
+      - name: Smoke check fessctl
+        if: steps.changed.outputs.list != '' && contains(steps.changed.outputs.list, 'fessctl.rb')
+        run: fessctl --help
